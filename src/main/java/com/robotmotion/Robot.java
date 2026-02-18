@@ -6,6 +6,7 @@ package com.robotmotion;
  */
 public class Robot {
 
+
     /** Directions the robot can face, in clockwise order. */
     public enum Direction {
         NORTH, EAST, SOUTH, WEST;
