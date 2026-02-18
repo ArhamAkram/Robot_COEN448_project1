@@ -10,6 +10,7 @@ public class Robot {
     public enum Direction {
         NORTH, EAST, SOUTH, WEST;
 
+
         public Direction turnRight() {
             return values()[(this.ordinal() + 1) % 4];
         }
