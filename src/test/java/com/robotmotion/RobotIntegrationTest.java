@@ -255,5 +255,241 @@ class RobotIntegrationTest {
     //    rows 1-3: only col 0 and col 4 marked
     //    robot returns to [0,0]
     // =========================================================================
+    @Test
+    @Order(3)
+    @DisplayName("IT3 – Closed rectangle: pen-down all 4 sides, robot returns to origin")
+    void testClosedRectangle_PenDownAllSides() {
 
+        cp.process("I 10");
+        cp.process("D");
+        cp.process("M 4");    // north  → [0,4]
+        cp.process("R");
+        cp.process("M 4");    // east   → [4,4]
+        cp.process("R");
+        cp.process("M 4");    // south  → [4,0]
+        cp.process("R");
+        cp.process("M 4");    // west   → [0,0]
+
+        Robot r = cp.getRobot();
+
+        // Robot back at origin
+        assertEquals(0, r.getX(), "Robot must return to col 0");
+        assertEquals(0, r.getY(), "Robot must return to row 0");
+        assertEquals(Robot.Direction.WEST, r.getFacing());
+
+        // Bottom row (row 0) cols 0-4 marked
+        for (int col = 0; col <= 4; col++)
+            assertEquals(1, r.getFloorCell(0, col),
+                    "Bottom edge: [row=0,col=" + col + "] must be marked");
+
+        // Top row (row 4) cols 0-4 marked
+        for (int col = 0; col <= 4; col++)
+            assertEquals(1, r.getFloorCell(4, col),
+                    "Top edge: [row=4,col=" + col + "] must be marked");
+
+        // Left column (col 0) rows 0-4 marked
+        for (int row = 0; row <= 4; row++)
+            assertEquals(1, r.getFloorCell(row, 0),
+                    "Left edge: [row=" + row + ",col=0] must be marked");
+
+        // Right column (col 4) rows 0-4 marked
+        for (int row = 0; row <= 4; row++)
+            assertEquals(1, r.getFloorCell(row, 4),
+                    "Right edge: [row=" + row + ",col=4] must be marked");
+
+        // Interior cells must be blank
+        for (int row = 1; row <= 3; row++)
+            for (int col = 1; col <= 3; col++)
+                assertEquals(0, r.getFloorCell(row, col),
+                        "Interior: [row=" + row + ",col=" + col + "] must be blank");
+
+        // Anything outside the 5×5 block must be blank
+        for (int row = 5; row < 10; row++)
+            for (int col = 0; col < 10; col++)
+                assertEquals(0, r.getFloorCell(row, col),
+                        "Outside rectangle: [row=" + row + ",col=" + col + "] must be blank");
+
+        // printFloor must contain exactly 16 asterisks (5+5+3+3 = 16, corners shared)
+        String floor = cp.process("P");
+        long totalStars = floor.chars().filter(c -> c == '*').count();
+        assertEquals(16, totalStars,
+                "Rectangle perimeter must have exactly 16 marked cells");
+    }
+
+    // =========================================================================
+    // IT4 – History Replay Reproduces Identical Floor
+    //
+    //  Runs the IT2 command sequence, then issues H (replay).
+    //  Verifies that after replay the floor is identical to after the
+    //  original run — covering CommandProcessor.cmdHistory() and its
+    //  interaction with Robot.initialize() and all movement methods.
+    // =========================================================================
+    @Test
+    @Order(4)
+    @DisplayName("IT4 – History replay produces floor state identical to original run")
+    void testHistoryReplay_ReproducesIdenticalFloor() {
+
+        // Run the IT2 sequence (two-bar shape)
+        cp.process("I 10");
+        cp.process("D");
+        cp.process("M 4");
+        cp.process("R");
+        cp.process("U");
+        cp.process("M 3");
+        cp.process("R");
+        cp.process("D");
+        cp.process("M 4");
+
+        Robot r = cp.getRobot();
+
+        // Capture the floor state after original run
+        int[][] originalFloor = new int[10][10];
+        for (int row = 0; row < 10; row++)
+            for (int col = 0; col < 10; col++)
+                originalFloor[row][col] = r.getFloorCell(row, col);
+
+        // Capture position and facing after original run
+        int origX = r.getX(), origY = r.getY();
+        Robot.Direction origFacing = r.getFacing();
+
+        // Execute history replay
+        String historyOutput = cp.process("H");
+        assertTrue(historyOutput.contains("Replaying History"),
+                "H command must output replay header");
+        assertTrue(historyOutput.contains("End of History"),
+                "H command must output end marker");
+
+        // After replay, floor must be identical
+        for (int row = 0; row < 10; row++)
+            for (int col = 0; col < 10; col++)
+                assertEquals(originalFloor[row][col], r.getFloorCell(row, col),
+                        "Replay: floor mismatch at [row=" + row + ",col=" + col + "]");
+
+        // Position and facing must also be restored
+        assertEquals(origX,      r.getX(),      "Replay: x position must match");
+        assertEquals(origY,      r.getY(),      "Replay: y position must match");
+        assertEquals(origFacing, r.getFacing(), "Replay: facing must match");
+    }
+
+    // =========================================================================
+    // IT5 – Re-Initialize Clears Floor; Status Reflects Reset
+    //
+    //  Draws on a 10×10 floor, then issues I 5, verifying the new 5×5 floor
+    //  is blank, robot is at [0,0] pen-up facing north, and history is cleared.
+    // =========================================================================
+
+
+    // =========================================================================
+    // IT6 – Boundary Clamping Does Not Corrupt Floor
+    //
+    //  Robot starts at [0,0] and is sent beyond every boundary.
+    //  Verifies the robot stops correctly and no ArrayIndexOutOfBoundsException
+    //  is thrown. Pen is down during boundary moves so we can verify clamped
+    //  cells are marked and nothing outside is touched.
+    // =========================================================================
+    @Test
+    @Order(6)
+    @DisplayName("IT6 – Boundary clamping: robot stops at all 4 edges, no floor corruption")
+    void testBoundaryClamping_NoFloorCorruption() {
+
+        cp.process("I 5");
+        Robot r = cp.getRobot();
+
+        // Move beyond north boundary from [0,0]
+        cp.process("D");
+        assertDoesNotThrow(() -> cp.process("M 100"),
+                "Moving beyond boundary must not throw");
+        assertEquals(0,  r.getX(), "X must stay at 0 after north overflow");
+        assertEquals(4,  r.getY(), "Y must clamp at 4 (N-1) after north overflow");
+
+        // Turn right → east; move beyond east boundary
+        cp.process("R");
+        assertDoesNotThrow(() -> cp.process("M 100"));
+        assertEquals(4,  r.getX(), "X must clamp at 4 after east overflow");
+        assertEquals(4,  r.getY());
+
+        // Turn right → south; move beyond south boundary
+        cp.process("R");
+        assertDoesNotThrow(() -> cp.process("M 100"));
+        assertEquals(4,  r.getX());
+        assertEquals(0,  r.getY(), "Y must clamp at 0 after south overflow");
+
+        // Turn right → west; move beyond west boundary
+        cp.process("R");
+        assertDoesNotThrow(() -> cp.process("M 100"));
+        assertEquals(0,  r.getX(), "X must clamp at 0 after west overflow");
+        assertEquals(0,  r.getY());
+
+        // No cell outside 5×5 should exist (floor is exactly 5×5)
+        assertEquals(5, r.getSize(), "Floor must remain 5×5");
+
+        // Every cell along the perimeter should be marked (pen was down)
+        // Top row and bottom row
+        for (int col = 0; col < 5; col++) {
+            assertEquals(1, r.getFloorCell(4, col), "Top row col " + col + " must be marked");
+            assertEquals(1, r.getFloorCell(0, col), "Bottom row col " + col + " must be marked");
+        }
+        // Left col and right col
+        for (int row = 0; row < 5; row++) {
+            assertEquals(1, r.getFloorCell(row, 0), "Left col row " + row + " must be marked");
+            assertEquals(1, r.getFloorCell(row, 4), "Right col row " + row + " must be marked");
+        }
+    }
+
+    // =========================================================================
+    // IT7 – Mixed-Case Commands Produce Identical Result to Uppercase
+    //
+    //  Runs the IT2 two-bar scenario using entirely lowercase commands,
+    //  then compares the resulting floor cell-by-cell against a reference
+    //  run done with uppercase commands. All classes touched.
+    // =========================================================================
+    @Test
+    @Order(7)
+    @DisplayName("IT7 – Lowercase commands produce identical floor to uppercase commands")
+    void testMixedCaseCommands_IdenticalResult() {
+
+        // ── Reference run with UPPERCASE commands ──────────────────────────
+        CommandProcessor cpUpper = new CommandProcessor();
+        cpUpper.process("I 10");
+        cpUpper.process("D");
+        cpUpper.process("M 4");
+        cpUpper.process("R");
+        cpUpper.process("U");
+        cpUpper.process("M 3");
+        cpUpper.process("R");
+        cpUpper.process("D");
+        cpUpper.process("M 4");
+        Robot rUpper = cpUpper.getRobot();
+
+        // ── Test run with lowercase commands ──────────────────────────────
+        CommandProcessor cpLower = new CommandProcessor();
+        cpLower.process("i 10");
+        cpLower.process("d");
+        cpLower.process("m 4");
+        cpLower.process("r");
+        cpLower.process("u");
+        cpLower.process("m 3");
+        cpLower.process("r");
+        cpLower.process("d");
+        cpLower.process("m 4");
+        Robot rLower = cpLower.getRobot();
+
+        // ── Compare every cell ────────────────────────────────────────────
+        for (int row = 0; row < 10; row++)
+            for (int col = 0; col < 10; col++)
+                assertEquals(rUpper.getFloorCell(row, col),
+                        rLower.getFloorCell(row, col),
+                        "Cell mismatch at [row=" + row + ",col=" + col + "]");
+
+        // ── Position and state must also match ────────────────────────────
+        assertEquals(rUpper.getX(),      rLower.getX(),      "X must match");
+        assertEquals(rUpper.getY(),      rLower.getY(),      "Y must match");
+        assertEquals(rUpper.getFacing(), rLower.getFacing(), "Facing must match");
+        assertEquals(rUpper.isPenDown(), rLower.isPenDown(), "Pen state must match");
+
+        // ── printFloor output must be character-for-character identical ───
+        assertEquals(cpUpper.process("P"), cpLower.process("P"),
+                "printFloor output must be identical regardless of command case");
+    }
+}
 
