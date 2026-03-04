@@ -6,7 +6,7 @@ import java.util.Scanner;
  * Main entry point for the Robot Motion Simulator.
  * Accepts command-line input from the user.
  */
-public class Main {
+public class  Main {
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
