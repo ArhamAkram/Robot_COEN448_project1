@@ -144,5 +144,116 @@ class RobotIntegrationTest {
     //  cmdTurnRight/cmdMove/cmdPrint/cmdStatus), Robot (penDown/penUp/
     //  turnRight/move/printFloor/getStatus/getFloorCell)
     // =========================================================================
+    @Test
+    @Order(2)
+    @DisplayName("IT2 – 3-cycle shape: cycle1 pen-down north 4, cycle2 pen-UP east 3, cycle3 pen-down south 4")
+    void testThreeCycleShape_TwoPenDownOnePenUp() {
+
+        // ── Cycle 1: pen DOWN, move north 4 ───────────────────────────────
+        cp.process("I 10");
+        cp.process("D");           // pen down
+        cp.process("M 4");         // north 4 → robot at [0,4]
+
+        Robot r = cp.getRobot();
+        assertEquals(0, r.getX()); assertEquals(4, r.getY());
+        assertTrue(r.isPenDown());
+
+        // ── Cycle 2: turn east, pen UP, move east 3 ───────────────────────
+        cp.process("R");           // now facing east
+        cp.process("U");           // pen UP  ← no marks this cycle
+        cp.process("M 3");         // east 3 → robot at [3,4]
+
+        assertEquals(3, r.getX()); assertEquals(4, r.getY());
+        assertFalse(r.isPenDown(), "Pen must be up during cycle 2");
+        assertEquals(Robot.Direction.EAST, r.getFacing());
+
+        // Row 4, cols 1 and 2 must be blank (pen was up)
+        assertEquals(0, r.getFloorCell(4, 1), "Col1 row4 must NOT be marked (pen was up)");
+        assertEquals(0, r.getFloorCell(4, 2), "Col2 row4 must NOT be marked (pen was up)");
+
+        // ── Cycle 3: turn south, pen DOWN, move south 4 ───────────────────
+        cp.process("R");           // now facing south
+        cp.process("D");           // pen DOWN again
+        cp.process("M 4");         // south 4 → robot at [3,0]
+
+        assertEquals(3, r.getX()); assertEquals(0, r.getY());
+        assertTrue(r.isPenDown(), "Pen must be down during cycle 3");
+        assertEquals(Robot.Direction.SOUTH, r.getFacing());
+
+        // ── Verify exact floor state ───────────────────────────────────────
+        // Cycle-1 marks: col 0, rows 0-4
+        int[] cycle1MarkedRows = {0, 1, 2, 3, 4};
+        for (int row : cycle1MarkedRows) {
+            assertEquals(1, r.getFloorCell(row, 0),
+                    "Cycle-1: expected mark at [row=" + row + ", col=0]");
+        }
+
+        // Cycle-2 gap: row 4, cols 1 and 2 must be blank
+        assertEquals(0, r.getFloorCell(4, 1), "Cycle-2 gap: [row=4,col=1] must be blank");
+        assertEquals(0, r.getFloorCell(4, 2), "Cycle-2 gap: [row=4,col=2] must be blank");
+
+        // Cycle-3 marks: col 3, rows 0-4
+        int[] cycle3MarkedRows = {0, 1, 2, 3, 4};
+        for (int row : cycle3MarkedRows) {
+            assertEquals(1, r.getFloorCell(row, 3),
+                    "Cycle-3: expected mark at [row=" + row + ", col=3]");
+        }
+
+        // Columns 1 and 2 across all rows must be entirely blank
+        for (int row = 0; row < 10; row++) {
+            assertEquals(0, r.getFloorCell(row, 1),
+                    "Col 1 must be entirely blank (pen was up when crossing it)");
+            assertEquals(0, r.getFloorCell(row, 2),
+                    "Col 2 must be entirely blank (pen was up when crossing it)");
+        }
+
+        // No marks beyond col 3
+        for (int row = 0; row < 10; row++) {
+            for (int col = 4; col < 10; col++) {
+                assertEquals(0, r.getFloorCell(row, col),
+                        "No marks expected beyond col 3 at [row=" + row + ",col=" + col + "]");
+            }
+        }
+
+        // ── printFloor renders the two-bar shape correctly ─────────────────
+        String floor = cp.process("P");
+        assertTrue(floor.contains("*"), "Floor must contain '*' marks");
+
+        // Each of rows 0-4 in printFloor must contain exactly 2 asterisks
+        String[] floorLines = floor.split("\n");
+        int markedRowCount = 0;
+        for (String line : floorLines) {
+            // Identify data rows by the leading row index (not the column-index footer)
+            if (line.matches("^\\s*[0-9]+\\s+.*")) {
+                long stars = line.chars().filter(c -> c == '*').count();
+                if (stars > 0) {
+                    assertEquals(2, stars,
+                            "Each marked row must have exactly 2 asterisks; line: [" + line + "]");
+                    markedRowCount++;
+                }
+            }
+        }
+        assertEquals(5, markedRowCount,
+                "Exactly 5 rows (0-4) should contain asterisks");
+
+        // ── C command reflects final state ─────────────────────────────────
+        String status = cp.process("C");
+        assertTrue(status.contains("3, 0"),  "Final position must be 3, 0");
+        assertTrue(status.contains("down"),  "Pen must be down at end");
+        assertTrue(status.contains("south"), "Must be facing south at end");
+    }
+
+    // =========================================================================
+    // IT3 – Closed Rectangle
+    //
+    //  Pen DOWN for all 4 sides.
+    //  Commands: I 10 → D → M 4 (north) → R → M 4 (east) →
+    //                           R → M 4 (south) → R → M 4 (west)
+    //
+    //  Expected: a 5×5 rectangle outline on the floor.
+    //    rows 0 and 4: cols 0-4 all marked
+    //    rows 1-3: only col 0 and col 4 marked
+    //    robot returns to [0,0]
+    // =========================================================================
 
 
